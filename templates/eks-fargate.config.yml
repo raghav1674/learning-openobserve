@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-logging
+  namespace: aws-observability
+data:
+  flb_log_cw: "false"  # Set to true to ship Fluent Bit process logs to CloudWatch.
+  parsers.conf: |
+    [PARSER]
+        Name crio
+        Format Regex
+        Regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>P|F) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+  filters.conf: |
+    [FILTER]
+        Name parser
+        Match *
+        Key_name log
+        Parser crio
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Merge_Log On
+        Keep_Log Off
+        Buffer_Size 0
+        Kube_Meta_Cache_TTL 300s
+  output.conf: |
+    [OUTPUT]
+        Name http
+        Match *
+        URI /api/default/sample-logs/_json
+        Host <openobserve-standalone-service> 
+        Port 5080
+        tls Off
+        Format json
+        Json_date_key     _timestamp
+        Json_date_format iso8601
+        HTTP_User <openobserve-standalone-service-root-user-email>
+        HTTP_Passwd  <openobserve-standalone-service-root-user-password>
+        compress gzip
