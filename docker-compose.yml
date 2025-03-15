@@ -1,0 +1,73 @@
+services:
+  db:
+    image: postgres:13
+    restart: always
+    shm_size: 256mb
+    env_file:
+      - envs/o2.env
+    ports:
+      - "5432:5432"
+    networks:
+      - openobserve
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    ports:
+      - "5080:5080"
+      - "5081:5081"
+    env_file:
+      - envs/o2.env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - openobserve
+    volumes:
+      - openobserve:/data/
+
+  prometheus:
+    image: prom/prometheus
+    user: root
+    networks:
+      - openobserve
+    ports:
+      - "9090:9090"
+    env_file:
+      - envs/o2.env
+    volumes:
+      - ./files/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus-data
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus-data'
+    depends_on:
+      openobserve:
+        condition: service_started
+
+  fluentbit:
+    image: public.ecr.aws/aws-observability/aws-for-fluent-bit:stable
+    networks:
+      - openobserve
+    volumes:
+      - ./files/fluentbit:/fluent-bit/etc/
+      - ./files/logs:/var/log/containers
+    command: ["sh","/entrypoint.sh"]
+    depends_on:
+      openobserve:
+        condition: service_started
+    
+networks:
+  openobserve:
+    driver: bridge
+
+volumes:
+  openobserve:
+  pgdata:
+  prometheus_data:
